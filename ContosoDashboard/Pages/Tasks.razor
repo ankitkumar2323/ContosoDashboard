@@ -5,6 +5,7 @@
 @using System.Security.Claims
 @attribute [Authorize]
 @inject ITaskService TaskService
+@inject TaskDocumentService TaskDocumentService
 @inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>My Tasks - ContosoDashboard</PageTitle>
@@ -123,6 +124,14 @@
                                 }
                             </td>
                             <td>
+                                <div class="input-group input-group-sm mb-1"><input class="form-control" placeholder="Document ID" @bind="attachmentDocumentId" /><button class="btn btn-outline-secondary" @onclick="() => AttachDocument(task.TaskId)">Attach</button></div>
+                                @if (attachments.TryGetValue(task.TaskId, out var taskDocuments))
+                                {
+                                    @foreach (var document in taskDocuments)
+                                    {
+                                        <a class="small d-block" href="/api/documents/@document.DocumentId/content">@document.Title</a>
+                                    }
+                                }
                                 <button class="btn btn-sm btn-outline-primary" @onclick="() => ViewTaskDetails(task.TaskId)">
                                     <i class="bi bi-eye"></i>
                                 </button>
@@ -140,6 +149,8 @@
     private string filterStatus = "";
     private string filterPriority = "";
     private int currentUserId = 0;
+    private string attachmentDocumentId = string.Empty;
+    private readonly Dictionary<int, List<Document>> attachments = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -161,6 +172,9 @@
     private async Task LoadTasks()
     {
         tasks = await TaskService.GetUserTasksAsync(currentUserId);
+        attachments.Clear();
+        foreach (var task in tasks)
+            attachments[task.TaskId] = await TaskDocumentService.GetForTaskAsync(task.TaskId, currentUserId);
     }
 
     private async Task ApplyFilters()
@@ -188,6 +202,12 @@
     private void ViewTaskDetails(int taskId)
     {
         // TODO: Navigate to task details or show modal
+    }
+
+    private async Task AttachDocument(int taskId)
+    {
+        if (int.TryParse(attachmentDocumentId, out var documentId) && await TaskDocumentService.AttachAsync(taskId, documentId, currentUserId))
+            attachmentDocumentId = string.Empty;
     }
 
     private string GetPriorityColor(TaskPriority priority)

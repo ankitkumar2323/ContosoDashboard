@@ -8,6 +8,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorPages();
+builder.Services.AddControllers();
 builder.Services.AddServerSideBlazor();
 
 // Add authentication state provider for Blazor
@@ -43,6 +44,16 @@ builder.Services.AddScoped<ITaskService, TaskService>();
 builder.Services.AddScoped<IProjectService, ProjectService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
+builder.Services.AddScoped<DocumentService>();
+builder.Services.AddScoped<DocumentValidationService>();
+builder.Services.AddScoped<DocumentAuthorizationService>();
+builder.Services.AddScoped<DocumentAuditService>();
+builder.Services.AddScoped<TaskDocumentService>();
+builder.Services.AddSingleton<LocalScanQueue>();
+builder.Services.AddSingleton<IScanQueue>(services => services.GetRequiredService<LocalScanQueue>());
+builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
+builder.Services.AddScoped<IMalwareScanningService, LocalMalwareScanningService>();
+builder.Services.AddHostedService<LocalDocumentScanWorker>();
 
 // Add HttpContextAccessor for accessing user claims
 builder.Services.AddHttpContextAccessor();
@@ -56,13 +67,72 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var context = services.GetRequiredService<ApplicationDbContext>();
-        context.Database.EnsureCreated(); // For development - use migrations in production
+        context.Database.Migrate();
+            EnsureDocumentTables(context);
     }
     catch (Exception ex)
     {
         var logger = services.GetRequiredService<ILogger<Program>>();
         logger.LogError(ex, "An error occurred creating the database.");
     }
+}
+
+static void EnsureDocumentTables(ApplicationDbContext context)
+{
+    context.Database.ExecuteSqlRaw(@"
+        CREATE TABLE IF NOT EXISTS Documents (
+            DocumentId INTEGER NOT NULL CONSTRAINT PK_Documents PRIMARY KEY AUTOINCREMENT,
+            Title TEXT NOT NULL,
+            Description TEXT NULL,
+            Category TEXT NOT NULL,
+            Tags TEXT NULL,
+            FileName TEXT NOT NULL,
+            FilePath TEXT NOT NULL,
+            FileType TEXT NOT NULL,
+            FileSize INTEGER NOT NULL,
+            Status TEXT NOT NULL,
+            UploaderId INTEGER NOT NULL,
+            ProjectId INTEGER NULL,
+            UploadedDate TEXT NOT NULL,
+            ScannedDate TEXT NULL,
+            CONSTRAINT FK_Documents_Users_UploaderId FOREIGN KEY (UploaderId) REFERENCES Users (UserId) ON DELETE RESTRICT,
+            CONSTRAINT FK_Documents_Projects_ProjectId FOREIGN KEY (ProjectId) REFERENCES Projects (ProjectId) ON DELETE RESTRICT
+        );
+        CREATE TABLE IF NOT EXISTS DocumentShares (
+            DocumentShareId INTEGER NOT NULL CONSTRAINT PK_DocumentShares PRIMARY KEY AUTOINCREMENT,
+            DocumentId INTEGER NOT NULL,
+            SharedWithUserId INTEGER NULL,
+            SharedWithTeam TEXT NULL,
+            SharedByUserId INTEGER NOT NULL,
+            SharedDate TEXT NOT NULL,
+            CONSTRAINT FK_DocumentShares_Documents_DocumentId FOREIGN KEY (DocumentId) REFERENCES Documents (DocumentId) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS TaskDocuments (
+            TaskDocumentId INTEGER NOT NULL CONSTRAINT PK_TaskDocuments PRIMARY KEY AUTOINCREMENT,
+            TaskId INTEGER NOT NULL,
+            DocumentId INTEGER NOT NULL,
+            AttachedByUserId INTEGER NOT NULL,
+            AttachedDate TEXT NOT NULL,
+            CONSTRAINT FK_TaskDocuments_Tasks_TaskId FOREIGN KEY (TaskId) REFERENCES Tasks (TaskId) ON DELETE CASCADE,
+            CONSTRAINT FK_TaskDocuments_Documents_DocumentId FOREIGN KEY (DocumentId) REFERENCES Documents (DocumentId) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS DocumentAuditEvents (
+            DocumentAuditEventId INTEGER NOT NULL CONSTRAINT PK_DocumentAuditEvents PRIMARY KEY AUTOINCREMENT,
+            DocumentId INTEGER NULL,
+            ActorUserId INTEGER NOT NULL,
+            Action TEXT NOT NULL,
+            Outcome TEXT NOT NULL,
+            OccurredDate TEXT NOT NULL,
+            Details TEXT NULL,
+            CONSTRAINT FK_DocumentAuditEvents_Documents_DocumentId FOREIGN KEY (DocumentId) REFERENCES Documents (DocumentId) ON DELETE SET NULL
+        );
+        CREATE INDEX IF NOT EXISTS IX_Documents_ProjectId_UploadedDate ON Documents (ProjectId, UploadedDate);
+        CREATE INDEX IF NOT EXISTS IX_Documents_Status_Category ON Documents (Status, Category);
+        CREATE INDEX IF NOT EXISTS IX_Documents_UploaderId_UploadedDate ON Documents (UploaderId, UploadedDate);
+        CREATE INDEX IF NOT EXISTS IX_DocumentShares_DocumentId_SharedWithUserId ON DocumentShares (DocumentId, SharedWithUserId);
+        CREATE INDEX IF NOT EXISTS IX_TaskDocuments_DocumentId ON TaskDocuments (DocumentId);
+        CREATE UNIQUE INDEX IF NOT EXISTS IX_TaskDocuments_TaskId_DocumentId ON TaskDocuments (TaskId, DocumentId);
+        CREATE INDEX IF NOT EXISTS IX_DocumentAuditEvents_DocumentId ON DocumentAuditEvents (DocumentId);");
 }
 
 // Configure the HTTP request pipeline.
@@ -106,6 +176,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapBlazorHub();
+app.MapControllers();
 app.MapFallbackToPage("/_Host");
 
 app.Run();
