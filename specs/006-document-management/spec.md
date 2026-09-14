@@ -5,6 +5,14 @@
 **Status**: Draft  
 **Input**: [Stakeholder requirements](../../StakeholderDocs/document-upload-and-management-feature.md)
 
+## Clarifications
+
+### Session 2026-09-14
+
+- Q: How should uploads be handled while virus scanning is pending? → A: Upload to quarantine storage, scan before making the document visible.
+- Q: Who may receive a shared document? → A: Share only with already-authorized project or role members.
+- Q: What should happen when virus scanning is unavailable? → A: Keep the upload quarantined until scanning succeeds.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Upload and organize documents (Priority: P1)
@@ -69,12 +77,12 @@ Users can share documents with authorized people or teams, attach them to tasks,
 - **FR-001**: Users MUST be able to upload multiple PDF, Office, JPEG, PNG, and text files, with a maximum size of 25 MB per file.
 - **FR-002**: Each document MUST capture a required title and category, plus optional description, project, and custom tags.
 - **FR-003**: The system MUST capture upload time, uploader, file size, and MIME type, with MIME type storage supporting at least 255 characters.
-- **FR-004**: The system MUST validate the file size and type, scan files for malware, and prevent failed or quarantined files from becoming accessible.
+- **FR-004**: The system MUST validate the file size and type, place accepted uploads in quarantine storage, scan them for malware, and make them visible only after a successful scan; failed, pending, or scanner-unavailable uploads MUST remain inaccessible.
 - **FR-005**: The system MUST provide My Documents and Project Documents views with sorting by title, date, category, and size and filtering by category, project, and date range.
 - **FR-006**: The system MUST search title, description, tags, uploader, and project and return authorized results within 2 seconds for the target workload.
 - **FR-007**: Authorized users MUST be able to download documents and preview supported PDF and image files in the browser.
 - **FR-008**: Owners MUST be able to edit metadata, replace files, and permanently delete their documents after confirmation; project managers may manage documents in their projects.
-- **FR-009**: Owners MUST be able to share documents with authorized users or teams, and recipients MUST receive in-app notifications.
+- **FR-009**: Owners MUST be able to share documents only with users or teams already authorized by project membership or role, and recipients MUST receive in-app notifications.
 - **FR-010**: Users MUST be able to attach documents to tasks, and the dashboard MUST show the user's five most recent documents and a document count.
 - **FR-011**: The system MUST notify relevant project members when a new project document is added.
 - **FR-012**: The system MUST log uploads, downloads, deletions, replacements, and sharing and provide administrator activity reports.
@@ -95,7 +103,9 @@ Users can share documents with authorized people or teams, attach them to tasks,
 ## Assumptions
 
 - The training release uses local filesystem storage and mock authentication; Azure Blob Storage and Entra ID are migration targets rather than required offline dependencies.
-- Virus scanning is available through a replaceable service boundary; a file is not accessible until scanning succeeds.
+- Virus scanning is available through a replaceable service boundary; uploads use quarantine storage and a file is not accessible until scanning succeeds.
+- If the scanning service is unavailable, the upload remains quarantined and inaccessible until a successful scan completes.
+- Sharing grants access within existing project and role authorization boundaries and MUST NOT expand a recipient's underlying authorization.
 - The initial search scope is document metadata, not full document content.
 - Version history, storage quotas, soft delete/trash, collaborative editing, external integrations, and mobile applications are out of scope.
 - The target implementation timeline is 8 to 10 weeks.

@@ -1,0 +1,87 @@
+openapi: 3.0.3
+info:
+  title: ContosoDashboard Document Management
+  version: 1.0.0
+  description: Authorized document operations exposed by the Blazor Server application.
+paths:
+  /documents:
+    get:
+      summary: List authorized documents
+      parameters:
+        - name: scope
+          in: query
+          schema: { type: string, enum: [mine, project, shared] }
+        - name: query
+          in: query
+          schema: { type: string }
+        - name: category
+          in: query
+          schema: { type: string }
+        - name: projectId
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Authorized document summaries
+        '401': { description: Authentication required }
+        '403': { description: Scope is not authorized }
+    post:
+      summary: Submit documents for quarantine and scanning
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [files, title, category]
+              properties:
+                files: { type: array, items: { type: string, format: binary } }
+                title: { type: string }
+                category: { type: string }
+                description: { type: string }
+                projectId: { type: integer }
+                tags: { type: string }
+      responses:
+        '202': { description: Accepted into quarantine; not yet visible }
+        '400': { description: Invalid type, size, or metadata }
+        '401': { description: Authentication required }
+        '403': { description: Project or role access denied }
+  /documents/{documentId}:
+    get:
+      summary: Read authorized document metadata
+      parameters:
+        - { name: documentId, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Document metadata }
+        '404': { description: Not found or not authorized }
+    patch:
+      summary: Update authorized metadata
+      parameters:
+        - { name: documentId, in: path, required: true, schema: { type: integer } }
+      responses:
+        '204': { description: Updated }
+        '403': { description: Not authorized }
+    delete:
+      summary: Permanently delete an authorized document
+      parameters:
+        - { name: documentId, in: path, required: true, schema: { type: integer } }
+      responses:
+        '204': { description: Deleted }
+        '403': { description: Not authorized }
+  /documents/{documentId}/content:
+    get:
+      summary: Download or preview authorized content
+      parameters:
+        - { name: documentId, in: path, required: true, schema: { type: integer } }
+        - { name: preview, in: query, schema: { type: boolean } }
+      responses:
+        '200': { description: Protected file stream }
+        '404': { description: Not found, unavailable, or not authorized }
+  /documents/{documentId}/shares:
+    post:
+      summary: Share within existing project or role authorization
+      parameters:
+        - { name: documentId, in: path, required: true, schema: { type: integer } }
+      responses:
+        '204': { description: Shared and notification created }
+        '403': { description: Recipient or actor is outside authorization boundary }
