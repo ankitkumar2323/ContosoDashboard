@@ -67,7 +67,7 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var context = services.GetRequiredService<ApplicationDbContext>();
-        context.Database.Migrate();
+            context.Database.EnsureCreated();
             EnsureDocumentTables(context);
     }
     catch (Exception ex)
