@@ -1,0 +1,121 @@
+@page "/documents"
+@using System.Security.Claims
+@using ContosoDashboard.Models
+@using ContosoDashboard.Services
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@attribute [Authorize]
+@inject DocumentService DocumentService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<PageTitle>Documents - ContosoDashboard</PageTitle>
+
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div><h1>Documents</h1><p class="text-muted">Upload and find authorized work documents.</p></div>
+    </div>
+    <div class="card mb-4 document-upload-panel"><div class="card-body">
+        <h2 class="h5">Upload documents</h2>
+        <InputFile OnChange="HandleSelectedFiles" multiple />
+        <div class="row g-2 mt-2">
+            <div class="col-md-4"><input class="form-control" placeholder="Title" @bind="title" /></div>
+            <div class="col-md-3">
+                <select class="form-select" @bind="category">
+                    <option value="">Category</option>
+                    @foreach (var item in DocumentCategories.All)
+                    {
+                        <option value="@item">@item</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-5"><input class="form-control" placeholder="Tags" @bind="tags" /></div>
+        </div>
+        <button class="btn btn-primary mt-3" @onclick="Upload" disabled="@(selectedFiles.Count == 0 || uploading)">@(uploading ? "Uploading..." : "Upload")</button>
+        @foreach (var result in results) { <div class="small mt-2 document-upload-result @(result.Succeeded ? "text-success" : "text-danger")">@result.FileName: @result.Message</div> }
+    </div></div>
+    <div class="d-flex gap-2 mb-3 document-toolbar"><input class="form-control" placeholder="Search title, description, tags, or filename" @bind="query" @bind:event="oninput" /><button class="btn btn-outline-primary" @onclick="LoadDocuments">Search</button></div>
+    @if (documents.Count == 0) { <p class="text-muted">No available documents found.</p> } else { <div class="table-responsive"><table class="table documents-table"><thead><tr><th>Title</th><th>Category</th><th>Uploaded</th><th>Size</th><th>Actions</th></tr></thead><tbody>@foreach (var document in documents) { <tr>
+        @if (editingDocument?.DocumentId == document.DocumentId) { <td><input class="form-control" @bind="editTitle" /></td><td><select class="form-select" @bind="editCategory">@foreach (var item in DocumentCategories.All) { <option value="@item">@item</option> }</select></td> } else { <td>@document.Title</td><td>@document.Category</td> }
+        <td>@document.UploadedDate.ToLocalTime().ToString("g")</td><td>@(document.FileSize / 1024) KB</td><td class="d-flex gap-1 document-table-actions"><a class="btn btn-sm btn-outline-secondary" href="/api/documents/@document.DocumentId/content" target="_blank">Open</a><button class="btn btn-sm btn-outline-primary" @onclick="() => BeginEdit(document)">Edit</button><button class="btn btn-sm btn-outline-success" @onclick="() => SaveEdit(document.DocumentId)" disabled="@(editingDocument?.DocumentId != document.DocumentId)">Save</button><button class="btn btn-sm btn-outline-danger" @onclick="() => Delete(document.DocumentId)">Delete</button><input class="form-control form-control-sm document-share-box" style="max-width:90px" placeholder="User ID" @bind="shareUserId" /><button class="btn btn-sm btn-outline-info" @onclick="() => Share(document.DocumentId)">Share</button></td>
+    </tr> }</tbody></table></div>}
+    <h2 class="h5 mt-4">Shared with me</h2>
+    @foreach (var document in sharedDocuments) { <div class="small"><a href="/api/documents/@document.DocumentId/content">@document.Title</a></div> }
+</div>
+
+@code {
+    private readonly List<IBrowserFile> selectedFiles = new();
+    private readonly List<DocumentUploadResult> results = new();
+    private List<Document> documents = new();
+    private string title = string.Empty;
+    private string category = "Other";
+    private string? tags;
+    private string? query;
+    private int userId;
+    private bool uploading;
+    private Document? editingDocument;
+    private string editTitle = string.Empty;
+    private string editCategory = "Other";
+    private string shareUserId = string.Empty;
+    private List<Document> sharedDocuments = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var value = state.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        int.TryParse(value, out userId);
+        await LoadDocuments();
+        sharedDocuments = await DocumentService.GetSharedWithMeAsync(userId);
+    }
+
+    private void HandleSelectedFiles(InputFileChangeEventArgs args)
+    {
+        selectedFiles.Clear();
+        selectedFiles.AddRange(args.GetMultipleFiles(20));
+    }
+
+    private async Task Upload()
+    {
+        uploading = true;
+        results.Clear();
+        foreach (var file in selectedFiles)
+        {
+            await using var stream = file.OpenReadStream(25 * 1024 * 1024);
+            using var content = new BrowserFileFormFile(stream, file.Name, file.ContentType, file.Size);
+            results.Add(await DocumentService.UploadAsync(content, string.IsNullOrWhiteSpace(title) ? Path.GetFileNameWithoutExtension(file.Name) : title, null, category, tags, null, userId));
+        }
+        selectedFiles.Clear();
+        uploading = false;
+        await LoadDocuments();
+    }
+
+    private void BeginEdit(Document document)
+    {
+        editingDocument = document;
+        editTitle = document.Title;
+        editCategory = document.Category;
+    }
+
+    private async Task SaveEdit(int documentId)
+    {
+        if (editingDocument is null) return;
+        await DocumentService.UpdateMetadataAsync(documentId, userId, editTitle, editingDocument.Description, editCategory, editingDocument.Tags);
+        editingDocument = null;
+        await LoadDocuments();
+    }
+
+    private async Task Delete(int documentId)
+    {
+        if (await DocumentService.DeleteAsync(documentId, userId)) await LoadDocuments();
+    }
+
+    private async Task Share(int documentId)
+    {
+        if (int.TryParse(shareUserId, out var recipientId))
+        {
+            await DocumentService.ShareAsync(documentId, recipientId, userId);
+            sharedDocuments = await DocumentService.GetSharedWithMeAsync(userId);
+        }
+    }
+
+    private async Task LoadDocuments() => documents = userId == 0 ? new() : await DocumentService.GetAuthorizedAsync(userId, new DocumentSearchFilters(query));
+}

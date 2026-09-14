@@ -344,6 +344,11 @@ ASALocalRun/
 # BeatPulse healthcheck temp database
 healthchecksdb
 
+# Local document-management runtime data
+**/*.db-shm
+**/*.db-wal
+ContosoDashboard/AppData/
+
 # Backup folder for Package Reference Convert tool in Visual Studio 2017
 MigrationBackup/
 
